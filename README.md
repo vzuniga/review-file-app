@@ -68,9 +68,3 @@ Common endpoints used by this type of workflow include:
 ```
 
 Your Sierra API permissions should be scoped as narrowly as possible for the intended workflow.
-
-
-```
-
-Your Sierra API permissions should be scoped as narrowly as possible for the intended workflow.
-
