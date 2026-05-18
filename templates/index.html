@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Patron Review Files</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+</head>
+<body class="bg-light p-4">
+  <div class="container">
+    <h2 class="mb-4">Patron Review Files</h2>
+
+    <div class="mb-3">
+      <label for="reviewSelect" class="form-label">Select Review File</label>
+      <div class="input-group">
+        <select id="reviewSelect" class="form-select"></select>
+        <button onclick="loadEntries()" class="btn btn-primary">Load Entries</button>
+      </div>
+    </div>
+
+    <table class="table table-bordered table-hover">
+      <thead class="table-light">
+        <tr>
+          <th>Name</th>
+          <th>Address</th>
+          <th>Phone(s)</th>
+          <th>Barcode(s)</th>
+          <th>Email(s)</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="entriesTable"></tbody>
+    </table>
+  </div>
+
+  <script>
+    async function fetchReviewFiles() {
+      const res = await fetch('/review-files');
+      const data = await res.json();
+      const select = document.getElementById('reviewSelect');
+      select.innerHTML = '';
+      data.forEach(file => {
+        const option = document.createElement('option');
+        option.value = file.id;
+        option.textContent = `${file.name} (ID: ${file.id})`;
+        select.appendChild(option);
+      });
+    }
+
+    async function loadEntries() {
+      const fileId = document.getElementById('reviewSelect').value;
+      const fileRes = await fetch(`/review-file/${fileId}`);
+      const fileData = await fileRes.json();
+      const currentEntries = fileData.entries;
+
+      const res = await fetch(`/patron-records?page=1&limit=100`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: currentEntries })
+      });
+
+      const data = await res.json();
+      const patrons = data.patrons;
+      console.log("Received patron records:", patrons);
+
+      const table = document.getElementById('entriesTable');
+      const logLines = [];
+      table.innerHTML = '';
+
+      patrons.forEach(patron => {
+        const id = patron.id || '';
+        const name = (patron.names?.length > 0) ? patron.names[0] : '—';
+        const addressObj = (patron.addresses || []).find(addr => addr.type === 'a') || patron.addresses?.[0];
+        const address = addressObj?.lines?.join(', ') || '—';
+
+        const phoneNumbers = (patron.phones || []).map(p => p.number);
+        const phone = phoneNumbers.length > 0 ? phoneNumbers.join(', ') : '—';
+
+        const barcodes = Array.isArray(patron.barcodes) && patron.barcodes.length > 0
+          ? patron.barcodes.join(', ') : '—';
+
+        const emails = Array.isArray(patron.emails) && patron.emails.length > 0
+          ? patron.emails.join(', ') : '—';
+
+        logLines.push(`Patron ID: ${id} | Name: ${name} | Barcodes: ${barcodes}`);
+
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td><input type="text" id="name-${id}" value="${name}" class="form-control"/></td>
+          <td><input type="text" id="address-${id}" value="${address}" class="form-control"/></td>
+          <td><input type="text" id="phone-${id}" value="${phone}" class="form-control"/></td>
+          <td><input type="text" id="barcodes-${id}" value="${barcodes}" class="form-control"/></td>
+          <td><input type="text" id="email-${id}" value="${emails}" class="form-control"/></td>
+          <td>
+            <button class="btn btn-success btn-sm" onclick="saveEntry(${id})">Save</button>
+          </td>
+        `;
+        table.appendChild(row);
+      });
+
+      await fetch('/log-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lines: logLines })
+      });
+    }
+
+    async function saveEntry(id) {
+      const name = document.getElementById(`name-${id}`).value;
+      const address = document.getElementById(`address-${id}`).value.split(',').map(l => l.trim());
+      const barcodes = document.getElementById(`barcodes-${id}`).value.split(',').map(b => b.trim());
+      const emails = document.getElementById(`email-${id}`).value.split(',').map(e => e.trim());
+      const phones = document.getElementById(`phone-${id}`).value.split(',').map(p => p.trim());
+
+      const varFields = [];
+      if (phones[0] && phones[0] !== '—') varFields.push({ fieldTag: 't', content: phones[0] });
+      if (phones[1] && phones[1] !== '—') varFields.push({ fieldTag: 'o', content: phones[1] });
+
+      const payload = {
+        names: [name],
+        addresses: [{ type: 'a', lines: address }],
+        barcodes: barcodes,
+        emails: emails,
+        varFields: varFields
+      };
+
+      const res = await fetch(`/update-entry/${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const result = await res.json();
+      if (result.success) {
+        alert(`Patron ${id} updated successfully.`);
+      } else {
+        alert(`Failed to update Patron ${id}.`);
+      }
+    }
+
+    window.onload = fetchReviewFiles;
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
